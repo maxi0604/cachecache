@@ -51,6 +51,7 @@ struct CacheEntry {
     tag: u64,
     last_used: u64,
     count_used: u64,
+    entered: u64,
 }
 
 struct CacheStats {
@@ -79,7 +80,7 @@ fn format_cache_line(line: &[CacheEntry], n: u64) -> String {
         format!("{} | -", n)
     }
     else {
-        format!("{} | {}", n, line.iter().map(|x| format!("{:x} ", x.tag)).collect::<String>())
+        format!("{} |{}", n, line.iter().map(|x| format!(" {:x} ({}) |", x.tag, x.entered)).collect::<String>())
     }
 }
 
@@ -88,11 +89,13 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let (cache, addrs) = read(&args[1])?;
 
-    let result = simulate(&cache, &addrs);
+    let (result, stats) = simulate(&cache, &addrs);
 
     for (i, line) in result.iter().enumerate() {
         println!("{}", format_cache_line(line, (i as u64 / cache.n_sets()).try_into().unwrap()));
     }
+
+    println!("Hits: {1}/{0}. Misses: {2}/{0}. Evictions: {3}/{0}", addrs.len(), stats.hits, stats.misses, stats.evictions);
 
     Ok(())
 }
@@ -127,7 +130,7 @@ fn read(path: &str) -> Result<(CacheDesc, Vec<u64>), Box<dyn Error>> {
     ))
 }
 
-fn simulate(cache: &CacheDesc, addrs: &Vec<u64>) -> Vec<Vec<CacheEntry>> {
+fn simulate(cache: &CacheDesc, addrs: &Vec<u64>) -> (Vec<Vec<CacheEntry>>, CacheStats) {
     // result is a vector of cache lines. Each cache line is represented by a vector
     // that is pushed to after every step since we don't only want to know the final state
     // but also the state at each step.
@@ -183,6 +186,7 @@ fn simulate(cache: &CacheDesc, addrs: &Vec<u64>) -> Vec<Vec<CacheEntry>> {
             tag,
             count_used: 1,
             last_used: i as u64,
+            entered: i as u64,
         };
 
         match cache.strat {
@@ -211,5 +215,5 @@ fn simulate(cache: &CacheDesc, addrs: &Vec<u64>) -> Vec<Vec<CacheEntry>> {
         }
     }
 
-    result
+    (result, stats)
 }
