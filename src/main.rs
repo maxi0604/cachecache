@@ -38,7 +38,7 @@ impl fmt::Display for FileTooShortError {
 impl Error for FileTooShortError {}
 
 #[derive(Clone, Debug)]
-struct Cache {
+struct CacheDesc {
     addr_size: u64,
     block_size: u64,
     n_blocks: u64,
@@ -53,7 +53,13 @@ struct CacheEntry {
     count_used: u64,
 }
 
-impl Cache {
+struct CacheStats {
+    hits: u64,
+    misses: u64,
+    evictions: u64,
+}
+
+impl CacheDesc {
     fn tag_bits(&self) -> u64 {
         self.addr_size - self.block_size - self.n_blocks / self.assoc
     }
@@ -73,7 +79,7 @@ fn format_cache_line(line: &[CacheEntry], n: u64) -> String {
         format!("{} | -", n)
     }
     else {
-        format!("{} | {}", n, line.iter().map(|x| format!("{:x}", x.tag)).collect::<String>())
+        format!("{} | {}", n, line.iter().map(|x| format!("{:x} ", x.tag)).collect::<String>())
     }
 }
 
@@ -91,7 +97,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn read(path: &str) -> Result<(Cache, Vec<u64>), Box<dyn Error>> {
+fn read(path: &str) -> Result<(CacheDesc, Vec<u64>), Box<dyn Error>> {
     let content = fs::read_to_string(path).unwrap();
     let mut lines = content.lines();
     
@@ -110,7 +116,7 @@ fn read(path: &str) -> Result<(Cache, Vec<u64>), Box<dyn Error>> {
         .collect();
 
     Ok((
-        Cache {
+        CacheDesc {
             addr_size,
             block_size,
             n_blocks,
@@ -121,7 +127,7 @@ fn read(path: &str) -> Result<(Cache, Vec<u64>), Box<dyn Error>> {
     ))
 }
 
-fn simulate(cache: &Cache, addrs: &Vec<u64>) -> Vec<Vec<CacheEntry>> {
+fn simulate(cache: &CacheDesc, addrs: &Vec<u64>) -> Vec<Vec<CacheEntry>> {
     // result is a vector of cache lines. Each cache line is represented by a vector
     // that is pushed to after every step since we don't only want to know the final state
     // but also the state at each step.
@@ -131,6 +137,12 @@ fn simulate(cache: &Cache, addrs: &Vec<u64>) -> Vec<Vec<CacheEntry>> {
             "Block count too large for 32 bit machine."
         )
     ];
+
+    let mut stats = CacheStats {
+        hits: 0,
+        misses: 0,
+        evictions: 0
+    };
 
     // Build masks to split address into parts.
     // Example:
@@ -156,12 +168,16 @@ fn simulate(cache: &Cache, addrs: &Vec<u64>) -> Vec<Vec<CacheEntry>> {
 
         let set = &mut result[((set_idx * cache.assoc) as usize)..(((set_idx + 1) * cache.assoc)) as usize];
 
-        // Hit (entry in the set with matching tag) found.
+        // Hit! Entry in the set with matching tag was found.
         if let Some(hit) = set.iter_mut().filter_map(|x| x.last_mut()).filter(|entry| entry.tag == tag).next() {
             hit.count_used += 1;
             hit.last_used = i as u64;
+
+            stats.hits += 1;
             continue;
         }
+
+        stats.misses += 1;
 
         let new_entry = CacheEntry {
             tag,
@@ -177,6 +193,7 @@ fn simulate(cache: &Cache, addrs: &Vec<u64>) -> Vec<Vec<CacheEntry>> {
                 else {
                     let cache_line = set.iter_mut().min_by_key(|x| x.last().unwrap().last_used);
                     cache_line.expect("Set must contain at least an empty or a full line.").push(new_entry);
+                    stats.evictions += 1;
                 }
 
             },
@@ -187,6 +204,7 @@ fn simulate(cache: &Cache, addrs: &Vec<u64>) -> Vec<Vec<CacheEntry>> {
                 else {
                     let cache_line = set.iter_mut().min_by_key(|x| x.last().unwrap().count_used);
                     cache_line.expect("Set must contain at least an empty or a full line.").push(new_entry);
+                    stats.evictions += 1;
                 }
             },
             None => set[0].push(new_entry),
