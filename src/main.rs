@@ -108,10 +108,15 @@ fn read(path: &str) -> Result<(CacheDesc, Vec<u64>), Box<dyn Error>> {
         .take(4)
         .map(|x| x.parse::<u64>());
 
+    // int_parameters.next() is an Option<Result<u64, IntParseError>>.
+    // OkOr maps this to a Result<Result<...>, FTSError>
+    // Because of the Result<Result<...>> we need to interrogate twice.
     let addr_size = int_parameters.next().ok_or(FileTooShortError)??;
     let block_size: u64 = int_parameters.next().ok_or(FileTooShortError)??;
     let n_blocks: u64 = int_parameters.next().ok_or(FileTooShortError)??;
     let assoc = int_parameters.next().ok_or(FileTooShortError)??;
+
+    // TODO: Better error handling. This currently maps any unknown strategy to None.
     let strat = lines.next().ok_or(FileTooShortError)?.parse().ok();
 
     let addrs: Vec<u64> = lines
@@ -153,6 +158,8 @@ fn simulate(cache: &CacheDesc, addrs: &Vec<u64>) -> (Vec<Vec<CacheEntry>>, Cache
     // addr = 100110011001
     //        ttttttiioooo
     // ( o = offset, i = set index, t = tag )
+    // The masks will have a one bit in the corresponding places above.
+    
     let mut idx_mask: u64 = 0;
     for j in cache.block_size..(cache.block_size + cache.idx_bits()) {
         idx_mask |= 1 << j;
@@ -165,8 +172,11 @@ fn simulate(cache: &CacheDesc, addrs: &Vec<u64>) -> (Vec<Vec<CacheEntry>>, Cache
     
     // Iterate by index since we need to store at which iteration an access happened.
     for i in 0..addrs.len() {
-
+        // The tag is the leftmost part of the address and needs to be shifted by the length of the
+        // tail.
         let tag = (addrs[i] & tag_mask) >> (cache.block_size + cache.idx_bits());
+
+        // The set index is to the left of the block size.
         let set_idx = (addrs[i] & idx_mask) >> cache.block_size;
 
         let set = &mut result[((set_idx * cache.assoc) as usize)..(((set_idx + 1) * cache.assoc)) as usize];
@@ -192,9 +202,13 @@ fn simulate(cache: &CacheDesc, addrs: &Vec<u64>) -> (Vec<Vec<CacheEntry>>, Cache
         match cache.strat {
             Some(Strategy::LRU) => {
                 if let Some(cache_line) = set.iter_mut().filter(|x| x.is_empty()).next() {
+                    // Empty = Free line found.
                     cache_line.push(new_entry);
                 }
                 else {
+                    // No empty line found. Evict the entry where last_used is minimal.
+                    // Eviction happens by appending since the last elements of the line vectors
+                    // are considered to be the current state of the cache.
                     let cache_line = set.iter_mut().min_by_key(|x| x.last().unwrap().last_used);
                     cache_line.expect("Set must contain at least an empty or a full line.").push(new_entry);
                     stats.evictions += 1;
@@ -206,12 +220,23 @@ fn simulate(cache: &CacheDesc, addrs: &Vec<u64>) -> (Vec<Vec<CacheEntry>>, Cache
                     cache_line.push(new_entry);
                 }
                 else {
+                    // No empty line found. Evict the entry where count_used is minimal.
+                    // Eviction happens by appending since the last elements of the line vectors
+                    // are considered to be the current state of the cache.
                     let cache_line = set.iter_mut().min_by_key(|x| x.last().unwrap().count_used);
                     cache_line.expect("Set must contain at least an empty or a full line.").push(new_entry);
                     stats.evictions += 1;
                 }
             },
-            None => set[0].push(new_entry),
+            // No eviction strategy should usually only be used with a direct (associativity = 1)
+            // cache. We just assume that is the case and evict or write the first (and usually only) entry
+            // in a block.
+            None => {
+                if !set[0].is_empty() {
+                    stats.evictions += 1;
+                }
+                set[0].push(new_entry); 
+            }
         }
     }
 
