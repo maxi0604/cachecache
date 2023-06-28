@@ -69,7 +69,12 @@ impl Cache {
 }
 
 fn format_cache_line(line: &[CacheEntry], n: u64) -> String {
-    format!("{} | {:?}", n, line.last().map(|x| x.tag))
+    if line.is_empty() {
+        format!("{} | -", n)
+    }
+    else {
+        format!("{} | {}", n, line.iter().map(|x| format!("{:x}", x.tag)).collect::<String>())
+    }
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -149,7 +154,6 @@ fn simulate(cache: &Cache, addrs: &Vec<u64>) -> Vec<Vec<CacheEntry>> {
         let tag = (addrs[i] & tag_mask) >> (cache.block_size + cache.idx_bits());
         let set_idx = (addrs[i] & idx_mask) >> cache.block_size;
 
-        println!("addr = {:b} idx_mask = {:b}", addrs[i], idx_mask);
         let set = &mut result[((set_idx * cache.assoc) as usize)..(((set_idx + 1) * cache.assoc)) as usize];
 
         // Hit (entry in the set with matching tag) found.
