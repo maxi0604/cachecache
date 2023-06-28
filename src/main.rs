@@ -150,7 +150,6 @@ fn simulate(cache: &Cache, addrs: &Vec<u64>) -> Vec<Vec<CacheEntry>> {
         let set_idx = (addrs[i] & idx_mask) >> cache.block_size;
 
         println!("addr = {:b} idx_mask = {:b}", addrs[i], idx_mask);
-        dbg!(((set_idx * cache.assoc) as usize)..(((set_idx + 1) * cache.assoc)) as usize);
         let set = &mut result[((set_idx * cache.assoc) as usize)..(((set_idx + 1) * cache.assoc)) as usize];
 
         // Hit (entry in the set with matching tag) found.
