@@ -88,7 +88,14 @@ fn simulate(cache: &Cache, addrs: &Vec<u64>) -> Vec<Vec<CacheEntry>> {
             "Block count too large for 32 bit machine."
         )
     ];
-    for i in 0..addrs.len() {
+
+    // Iterate by index since we need to store at which iteration an access happened.
+    'outer: for i in 0..addrs.len() {
+        // Example:
+        // Block Count = 16, Block Size = 16, Associativity = 4, (=> 4 Sets) 
+        // addr = 100110011001
+        //        ttttttiioooo
+        // ( o = offset, i = set index, t = tag )
         let mut idx_mask: u64 = 0;
         for j in cache.block_size..cache.idx_bits() {
             idx_mask |= 1 << j;
@@ -102,6 +109,7 @@ fn simulate(cache: &Cache, addrs: &Vec<u64>) -> Vec<Vec<CacheEntry>> {
         let set_idx = (addrs[i] & idx_mask) >> cache.block_size;
         let mut lru: Option<u64> = None;
         let mut lfu: Option<u64> = None;
+        // Either find empty block in set or least recently and least frequently used block.
         for j in (set_idx * cache.block_size)..((set_idx + 1) * cache.block_size) {
             match result[j as usize].last() {
                 Some(entry) => {
@@ -133,10 +141,23 @@ fn simulate(cache: &Cache, addrs: &Vec<u64>) -> Vec<Vec<CacheEntry>> {
                         count_used: 1,
                         last_used: i as u64,
                     });
-                    break;
+                    continue 'outer;
                 }
             }
+
+            let idx = match cache.strat {
+                Some(Strategy::LFU) => lfu.unwrap() as usize,
+                Some(Strategy::LRU) => lru.unwrap() as usize,
+                None => set_idx as usize,
+            };
+
+            result[idx].push(CacheEntry {
+                tag: addrs[i] & tag_mask,
+                count_used: 1,
+                last_used: i as u64,
+            });
         }
     }
-    vec![vec![]]
+
+    result
 }
