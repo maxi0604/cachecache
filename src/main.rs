@@ -37,6 +37,16 @@ impl fmt::Display for FileTooShortError {
 
 impl Error for FileTooShortError {}
 
+#[derive(Debug, PartialEq, Eq)]
+struct InvalidArgumentsError;
+impl fmt::Display for InvalidArgumentsError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Usage: cachecache <path-to-test>")
+    }
+}
+
+impl Error for InvalidArgumentsError {}
+
 #[derive(Clone, Debug)]
 struct CacheDesc {
     addr_size: u64,
@@ -87,6 +97,10 @@ fn format_cache_line(line: &[CacheEntry], n: u64) -> String {
 fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<String> = env::args().collect();
 
+    if args.len() != 2 {
+        return Err(Box::from(InvalidArgumentsError));
+    }
+
     let (cache, addrs) = read(&args[1])?;
 
     let (result, stats) = simulate(&cache, &addrs);
@@ -101,7 +115,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 }
 
 fn read(path: &str) -> Result<(CacheDesc, Vec<u64>), Box<dyn Error>> {
-    let content = fs::read_to_string(path).unwrap();
+    let content = fs::read_to_string(path)?;
     let mut lines = content.lines();
     
     let mut int_parameters = lines.by_ref()
