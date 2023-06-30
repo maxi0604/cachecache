@@ -1,6 +1,14 @@
 use std::error::Error;
+use std::fmt::Display;
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
-use std::{fmt, fs};
+use std::{fmt, fs, u8};
+
+use gtk::gio::{FileInputStream, Cancellable, ResourceError};
+use gtk::gio::ffi::{g_file_read, GCancellable};
+use gtk::glib::error::ErrorDomain;
+use gtk::glib::ffi::GError;
+use gtk::prelude::{FileExt, InputStreamExt, InputStreamExtManual};
 
 #[derive(Clone, Copy, Debug)]
 enum Strategy {
@@ -79,6 +87,12 @@ pub struct CacheEntry {
     entered: u64,
 }
 
+impl Display for CacheEntry {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "tag: {}", self.tag)
+    }
+}
+
 pub struct CacheStats {
     hits: u64,
     misses: u64,
@@ -111,7 +125,7 @@ pub fn format_cache_line(line: &[CacheEntry], n: u64) -> String {
     }
 }
 
-pub fn read(path: &str) -> Result<(CacheDesc, Vec<u64>), Box<dyn Error>> {
+pub fn read(path: &PathBuf) -> Result<(CacheDesc, Vec<u64>), Box<dyn Error>> {
     let content = fs::read_to_string(path)?;
     let mut lines = content.lines();
 
