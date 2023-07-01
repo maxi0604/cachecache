@@ -87,6 +87,15 @@ impl Display for CacheEntry {
     }
 }
 
+impl CacheEntry {
+    pub fn tag(&self) -> u64 {
+        self.tag
+    }
+    pub fn entered(&self) -> u64 {
+        self.entered
+    }
+}
+
 pub struct CacheStats {
     hits: u64,
     misses: u64,
@@ -103,20 +112,6 @@ impl CacheStats {
   pub fn evictions(&self) -> u64 {
     self.evictions
   }
-}
-
-pub fn format_cache_line(line: &[CacheEntry], n: u64) -> String {
-    if line.is_empty() {
-        format!("{} | -", n)
-    } else {
-        format!(
-            "{} |{}",
-            n,
-            line.iter()
-                .map(|x| format!(" {:x} ({}) |", x.tag, x.entered))
-                .collect::<String>()
-        )
-    }
 }
 
 pub fn read(path: &PathBuf) -> Result<(CacheDesc, Vec<u64>), Box<dyn Error>> {

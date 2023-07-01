@@ -1,14 +1,13 @@
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
-use std::{env, error::Error, thread};
+use std::{error::Error, thread};
 
 use gtk::gio::{ApplicationFlags, ApplicationCommandLine};
 use gtk::glib::{MainContext, Priority};
-use gtk::{prelude::*, ApplicationWindow, ScrolledWindow, PolicyType, Button, Orientation};
+use gtk::{prelude::*, ApplicationWindow, ScrolledWindow, PolicyType, Button, Orientation, Label, Align, Separator};
 use gtk::{Application, glib};
 use sim::{CacheEntry, CacheStats, CacheDesc};
 use glib::clone;
-use glib::prelude::*;
 
 mod sim;
 
@@ -39,18 +38,28 @@ fn build_ui(app: &Application, command_line: &ApplicationCommandLine) -> i32 {
     }
 
     let scrolled_window = ScrolledWindow::builder()
-        .hscrollbar_policy(PolicyType::Never)
+        .hscrollbar_policy(PolicyType::Automatic)
         .min_content_width(260)
+        .vexpand(true)
         .build();
+
+    let separator_top = Separator::new(Orientation::Horizontal);
+    let separator_bottom = Separator::new(Orientation::Horizontal);
 
     let simulate_button = Button::builder()
         .label("Simulate")
+        .margin_end(10)
+        .margin_top(10)
+        .margin_start(10)
+        .margin_bottom(10)
         .build();
 
-    let (sender, receiver) = MainContext::channel(Priority::default());
+    let stats_showcase = Label::builder().visible(false).build();
+
+    let (sim_sender, sim_receiver) = MainContext::channel(Priority::default());
 
     simulate_button.connect_clicked(move |_| {
-        let sender = sender.clone();
+        let sender = sim_sender.clone();
         let path_buf = path_buf.clone();
         thread::spawn(move || {
             sender.send(SimulationCommunication::Run).expect("Could not send through channel");
@@ -68,17 +77,46 @@ fn build_ui(app: &Application, command_line: &ApplicationCommandLine) -> i32 {
         });
     });
 
-    receiver.attach(None, clone!(@weak simulate_button, @weak scrolled_window => @default-return Continue(false),
+    let (stats_sender, stats_receiver) = MainContext::channel(Priority::default());
+
+    sim_receiver.attach(None, clone!(@weak simulate_button, @weak scrolled_window => @default-return Continue(false),
         move |result| {
-            println!("handling");
+            let stats_sender = stats_sender.clone();
             match result {
                 SimulationCommunication::Success((lines, cache, addrs, stats)) => {
                     simulate_button.set_sensitive(true);
+                    
+                    let grid = gtk::Grid::builder()
+                        .margin_end(10)
+                        .margin_top(10)
+                        .margin_start(10)
+                        .margin_bottom(10)
+                        .column_spacing(10)
+                        .build();
+
                     for (i, line) in lines.iter().enumerate() {
-                        println!("{}", sim::format_cache_line(line, (i as u64 / cache.n_sets()).try_into().unwrap()));
+                        let line_index: i32 = (i as i32).try_into().unwrap();
+
+                        let line_label = Label::builder().label(format!("{}", line_index + 1)).halign(Align::End).build();
+
+                        grid.attach(&line_label, 0, line_index, 2, 1);
+
+                        if line.is_empty() {
+                            let label = Label::builder().label("-").build();
+                            grid.attach(&label, 2, line_index, 1, 1);
+                        } else {
+                            let mut column_index: i32 = 2;
+
+                            for entry in line.iter() {
+                                let label = Label::builder().label(format!("{} ({})", entry.tag(), entry.entered())).build();
+                                grid.attach(&label, column_index, line_index, 1, 1);
+                                column_index += 1;
+                            }
+                        }
                     }
 
-                    println!("Hits: {1}/{0}. Misses: {2}/{0}. Evictions: {3}/{0}", addrs.len(), stats.hits(), stats.misses(), stats.evictions());
+                    scrolled_window.set_child(Some(&grid));
+                    stats_sender.send(Some((cache, addrs, stats))).expect("Could not send through stats channel");
                 },
                 SimulationCommunication::Failure => {
                     simulate_button.set_sensitive(true);
@@ -87,7 +125,6 @@ fn build_ui(app: &Application, command_line: &ApplicationCommandLine) -> i32 {
                     simulate_button.set_sensitive(false);
                 }
             }
-            println!("handled");
             Continue(true)
         }
     ));
@@ -96,8 +133,26 @@ fn build_ui(app: &Application, command_line: &ApplicationCommandLine) -> i32 {
         .orientation(Orientation::Vertical)
         .build();
 
+    stats_receiver.attach(None, clone!(@weak stats_showcase => @default-return Continue(false), 
+        move |stats: Option<(CacheDesc, Vec<u64>, CacheStats)>| {
+            match stats {
+                Some((_cache, addrs, stats)) => {
+                    stats_showcase.set_label(format!("Hits: {1}/{0}. Misses: {2}/{0}. Evictions: {3}/{0}", addrs.len(), stats.hits(), stats.misses(), stats.evictions()).as_str());
+                    stats_showcase.set_visible(true);
+                }
+                None => {
+                    stats_showcase.set_visible(false);
+                }
+            }
+            Continue(true)
+        }
+    ));
+
     container_box.append(&simulate_button);
+    container_box.append(&separator_top);
     container_box.append(&scrolled_window);
+    container_box.append(&separator_bottom);
+    container_box.append(&stats_showcase);
 
     let window = ApplicationWindow::builder()
         .title("CacheCache")
