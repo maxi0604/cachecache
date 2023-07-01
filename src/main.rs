@@ -32,9 +32,13 @@ enum SimulationCommunication {
 
 fn build_ui(app: &Application, command_line: &ApplicationCommandLine) -> i32 {
     let arguments: Vec<OsString> = command_line.arguments();
-    let mut path_buf = PathBuf::new();
+    let mut path_buf: Option<PathBuf> = None;
     if let Some(os_string) = arguments.get(1) {
-        path_buf.push(Path::new(os_string));
+        let mut some_path_buf = PathBuf::new();
+        some_path_buf.push(Path::new(os_string));
+        path_buf = Some(some_path_buf);
+    } else {
+
     }
 
     let scrolled_window = ScrolledWindow::builder()
@@ -52,6 +56,7 @@ fn build_ui(app: &Application, command_line: &ApplicationCommandLine) -> i32 {
         .margin_top(10)
         .margin_start(10)
         .margin_bottom(10)
+        .sensitive(path_buf != None)
         .build();
 
     let stats_showcase = Label::builder().visible(false).build();
@@ -60,21 +65,25 @@ fn build_ui(app: &Application, command_line: &ApplicationCommandLine) -> i32 {
 
     simulate_button.connect_clicked(move |_| {
         let sender = sim_sender.clone();
-        let path_buf = path_buf.clone();
-        thread::spawn(move || {
-            sender.send(SimulationCommunication::Run).expect("Could not send through channel");
-            
-            match run_sim(&path_buf) {
-                Ok(result) => {
-                    sender.send(SimulationCommunication::Success(result)).expect("Could not send through channel");
-                },
-                Err(err) => {
-                    eprintln!("run_sim: {}", err);
-                    sender.send(SimulationCommunication::Failure).expect("Could not send through channel");
-                }
-            }
+        if let Some(some_path_buf) = &path_buf {
+            let some_path_buf = some_path_buf.clone();
+            thread::spawn(move || {
+                sender.send(SimulationCommunication::Run).expect("Could not send through channel");
 
-        });
+                match run_sim(&some_path_buf) {
+                    Ok(result) => {
+                        sender.send(SimulationCommunication::Success(result)).expect("Could not send through channel");
+                    },
+                    Err(err) => {
+                        eprintln!("run_sim: {}", err);
+                        sender.send(SimulationCommunication::Failure).expect("Could not send through channel");
+                    }
+                }
+
+            });
+        } else {
+
+        }
     });
 
     let (stats_sender, stats_receiver) = MainContext::channel(Priority::default());
