@@ -192,7 +192,9 @@ fn build_ui(app: &Application, command_line: &ApplicationCommandLine) -> i32 {
             file_dialogue.open(Window::NONE, Cancellable::NONE, move |result| {
                 match result {
                     Ok(file) => {
-                        window.set_path_buf(file.path());
+                        if let Some(path) = file.path() {
+                            window.set_path_buf(Some(path));
+                        }
                         simulate_button.set_sensitive(true);
                     },
                     Err(_) => {
