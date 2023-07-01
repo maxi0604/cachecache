@@ -1,14 +1,8 @@
 use std::error::Error;
 use std::fmt::Display;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::str::FromStr;
-use std::{fmt, fs, u8};
-
-use gtk::gio::{FileInputStream, Cancellable, ResourceError};
-use gtk::gio::ffi::{g_file_read, GCancellable};
-use gtk::glib::error::ErrorDomain;
-use gtk::glib::ffi::GError;
-use gtk::prelude::{FileExt, InputStreamExt, InputStreamExtManual};
+use std::{fmt, fs};
 
 #[derive(Clone, Copy, Debug)]
 enum Strategy {

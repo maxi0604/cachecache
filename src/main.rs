@@ -6,7 +6,7 @@ use gtk::gio::{ApplicationFlags, ApplicationCommandLine};
 use gtk::glib::{MainContext, Priority};
 use gtk::{prelude::*, ApplicationWindow, ScrolledWindow, PolicyType, Button, Orientation};
 use gtk::{Application, glib};
-use sim::{CacheEntry, CacheStats};
+use sim::{CacheEntry, CacheStats, CacheDesc};
 use glib::clone;
 use glib::prelude::*;
 
@@ -26,7 +26,7 @@ fn main() -> glib::ExitCode {
 }
 
 enum SimulationCommunication {
-    Success((CacheLineVec, CacheStats)),
+    Success((CacheLineVec, CacheDesc, Vec<u64>, CacheStats)),
     Failure,
     Run
 }
@@ -72,14 +72,13 @@ fn build_ui(app: &Application, command_line: &ApplicationCommandLine) -> i32 {
         move |result| {
             println!("handling");
             match result {
-                SimulationCommunication::Success((lines, _)) => {
+                SimulationCommunication::Success((lines, cache, addrs, stats)) => {
                     simulate_button.set_sensitive(true);
-                    for line in lines {
-                        for cache_entry in line {
-                            print!("{}", cache_entry);
-                        }
-                        println!();
+                    for (i, line) in lines.iter().enumerate() {
+                        println!("{}", sim::format_cache_line(line, (i as u64 / cache.n_sets()).try_into().unwrap()));
                     }
+
+                    println!("Hits: {1}/{0}. Misses: {2}/{0}. Evictions: {3}/{0}", addrs.len(), stats.hits(), stats.misses(), stats.evictions());
                 },
                 SimulationCommunication::Failure => {
                     simulate_button.set_sensitive(true);
@@ -114,8 +113,10 @@ fn build_ui(app: &Application, command_line: &ApplicationCommandLine) -> i32 {
 
 type CacheLineVec = Vec<Vec<CacheEntry>>;
 
-fn run_sim(path: &PathBuf) -> Result<(CacheLineVec, sim::CacheStats), Box<dyn Error>> {
+fn run_sim(path: &PathBuf) -> Result<(CacheLineVec, CacheDesc, Vec<u64>, sim::CacheStats), Box<dyn Error>> {
     let (cache, addrs) = sim::read(path)?;
 
-    Ok(sim::simulate(&cache, &addrs))
+    let (lines, stats) = sim::simulate(&cache, &addrs);
+
+    Ok((lines, cache, addrs, stats))
 }
