@@ -2,14 +2,16 @@ use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::{error::Error, thread};
 
-use gtk::gio::{ApplicationFlags, ApplicationCommandLine};
+use gtk::gio::{ApplicationFlags, ApplicationCommandLine, Cancellable};
 use gtk::glib::{MainContext, Priority};
-use gtk::{prelude::*, ApplicationWindow, ScrolledWindow, PolicyType, Button, Orientation, Label, Align, Separator};
+use gtk::{prelude::*, ScrolledWindow, PolicyType, Button, Orientation, Label, Align, Separator, FileDialog, Window};
 use gtk::{Application, glib};
 use sim::{CacheEntry, CacheStats, CacheDesc};
 use glib::clone;
+use window::CacheCacheWindow;
 
 mod sim;
+mod window;
 
 const APP_ID: &str = "com.github.maxi0604.CacheCache";
 
@@ -31,19 +33,21 @@ enum SimulationCommunication {
 }
 
 fn build_ui(app: &Application, command_line: &ApplicationCommandLine) -> i32 {
+
+    let window = CacheCacheWindow::new(app);
+
     let arguments: Vec<OsString> = command_line.arguments();
-    let mut path_buf: Option<PathBuf> = None;
     if let Some(os_string) = arguments.get(1) {
         let mut some_path_buf = PathBuf::new();
         some_path_buf.push(Path::new(os_string));
-        path_buf = Some(some_path_buf);
+        window.set_path_buf(Some(some_path_buf));
     } else {
-
+        window.set_path_buf(None);
     }
 
     let scrolled_window = ScrolledWindow::builder()
         .hscrollbar_policy(PolicyType::Automatic)
-        .min_content_width(260)
+        .min_content_width(150)
         .vexpand(true)
         .build();
 
@@ -52,39 +56,35 @@ fn build_ui(app: &Application, command_line: &ApplicationCommandLine) -> i32 {
 
     let simulate_button = Button::builder()
         .label("Simulate")
-        .margin_end(10)
-        .margin_top(10)
-        .margin_start(10)
-        .margin_bottom(10)
-        .sensitive(path_buf != None)
+        .sensitive(window.path_buf() != None)
         .build();
 
     let stats_showcase = Label::builder().visible(false).build();
 
     let (sim_sender, sim_receiver) = MainContext::channel(Priority::default());
 
-    simulate_button.connect_clicked(move |_| {
-        let sender = sim_sender.clone();
-        if let Some(some_path_buf) = &path_buf {
+    simulate_button.connect_clicked(clone!(@weak window => move |_| {
+        let sim_sender = sim_sender.clone();
+        if let Some(some_path_buf) = window.path_buf() {
             let some_path_buf = some_path_buf.clone();
             thread::spawn(move || {
-                sender.send(SimulationCommunication::Run).expect("Could not send through channel");
+                sim_sender.send(SimulationCommunication::Run).expect("Could not send through channel");
 
                 match run_sim(&some_path_buf) {
                     Ok(result) => {
-                        sender.send(SimulationCommunication::Success(result)).expect("Could not send through channel");
+                        sim_sender.send(SimulationCommunication::Success(result)).expect("Could not send through channel");
                     },
                     Err(err) => {
                         eprintln!("run_sim: {}", err);
-                        sender.send(SimulationCommunication::Failure).expect("Could not send through channel");
+                        sim_sender.send(SimulationCommunication::Failure).expect("Could not send through channel");
                     }
                 }
 
             });
         } else {
-
+            eprintln!("no file selected");
         }
-    });
+    }));
 
     let (stats_sender, stats_receiver) = MainContext::channel(Priority::default());
 
@@ -157,19 +157,47 @@ fn build_ui(app: &Application, command_line: &ApplicationCommandLine) -> i32 {
         }
     ));
 
-    container_box.append(&simulate_button);
+    let button_container = gtk::Box::builder()
+        .orientation(Orientation::Horizontal)
+        .spacing(10)
+        .margin_end(10)
+        .margin_top(10)
+        .margin_start(10)
+        .margin_bottom(10)
+        .build();
+
+    let open_file_button = Button::builder()
+        .label("Open")
+        .build();
+
+    button_container.append(&simulate_button);
+    button_container.append(&open_file_button);
+
+    container_box.append(&button_container);
     container_box.append(&separator_top);
     container_box.append(&scrolled_window);
     container_box.append(&separator_bottom);
     container_box.append(&stats_showcase);
 
-    let window = ApplicationWindow::builder()
-        .title("CacheCache")
-        .application(app)
-        .default_height(400)
-        .default_width(500)
-        .child(&container_box)
-        .build();
+    window.set_child(Some(&container_box));
+
+    open_file_button.connect_clicked(clone!(@weak window, @weak simulate_button => 
+        move |_| {
+            let file_dialogue = FileDialog::new();
+            file_dialogue.open(Window::NONE, Cancellable::NONE, move |result| {
+                match result {
+                    Ok(file) => {
+                        window.set_path_buf(file.path());
+                        simulate_button.set_sensitive(true);
+                    },
+                    Err(_) => {
+                        simulate_button.set_sensitive(false);
+                    }
+                }
+            })
+        }
+    ));
+
 
     window.present();
     0
