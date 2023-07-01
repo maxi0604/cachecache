@@ -53,10 +53,15 @@ fn build_ui(app: &Application, command_line: &ApplicationCommandLine) -> i32 {
 
     let separator_top = Separator::new(Orientation::Horizontal);
     let separator_bottom = Separator::new(Orientation::Horizontal);
+    separator_bottom.set_visible(false);
 
     let simulate_button = Button::builder()
         .label("Simulate")
         .sensitive(window.path_buf() != None)
+        .build();
+
+    simulate_button.bind_property("sensitive", &separator_bottom, "visible")
+        .bidirectional()
         .build();
 
     let stats_showcase = Label::builder().visible(false).build();
