@@ -14,6 +14,7 @@ mod sim;
 mod window;
 
 const APP_ID: &str = "com.github.maxi0604.CacheCache";
+type SimResult = (CacheLineVec, CacheDesc, Vec<u64>, CacheStats);
 
 fn main() -> glib::ExitCode {
     let app = Application::builder()
@@ -27,7 +28,7 @@ fn main() -> glib::ExitCode {
 }
 
 enum SimulationCommunication {
-    Success((CacheLineVec, CacheDesc, Vec<u64>, CacheStats)),
+    Success(SimResult),
     Failure,
     Run
 }
@@ -253,7 +254,7 @@ fn build_ui(app: &Application, command_line: &ApplicationCommandLine) -> i32 {
 
 type CacheLineVec = Vec<Vec<CacheEntry>>;
 
-fn run_sim(path: &PathBuf) -> Result<(CacheLineVec, CacheDesc, Vec<u64>, sim::CacheStats), Box<dyn Error>> {
+fn run_sim(path: &PathBuf) -> Result<SimResult, Box<dyn Error>> {
     let (cache, addrs) = sim::read(path)?;
 
     let (lines, stats) = sim::simulate(&cache, &addrs);
