@@ -151,7 +151,7 @@ pub fn read(path: &PathBuf) -> Result<(CacheDesc, Vec<u64>), Box<dyn Error>> {
     ))
 }
 
-pub fn simulate(cache: &CacheDesc, addrs: &Vec<u64>) -> (Vec<Vec<CacheEntry>>, CacheStats) {
+pub fn simulate(cache: &CacheDesc, addrs: &[u64]) -> (Vec<Vec<CacheEntry>>, CacheStats) {
     // result is a vector of cache lines. Each cache line is represented by a vector
     // that is pushed to after every step since we don't only want to know the final state
     // but also the state at each step.
