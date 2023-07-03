@@ -251,9 +251,7 @@ pub fn simulate(cache: &CacheDesc, addrs: &Vec<u64>) -> (Vec<Vec<CacheEntry>>, C
                     stats.evictions += 1;
                 }
             }
-            // No eviction strategy should usually only be used with a direct (associativity = 1)
-            // cache. We just assume that is the case and evict or write the first (and usually only) entry
-            // in a block.
+            // This trivial strategy should usually only be used with a direct (assoc = 1) cache.
             Strategy::First => {
                 if !set[0].is_empty() {
                     stats.evictions += 1;
