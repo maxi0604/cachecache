@@ -90,11 +90,11 @@ fn build_ui(app: &Application, command_line: &ApplicationCommandLine) -> i32 {
         .label("Simulate")
         .build();
 
-    simulate_button.bind_property("sensitive", &separator_bottom, "visible")
+    let stats_showcase = Label::builder().visible(false).build();
+
+    stats_showcase.bind_property("visible", &separator_bottom, "visible")
         .bidirectional()
         .build();
-
-    let stats_showcase = Label::builder().visible(false).build();
 
     let (sim_sender, sim_receiver) = MainContext::channel(Priority::default());
 
@@ -142,7 +142,9 @@ fn build_ui(app: &Application, command_line: &ApplicationCommandLine) -> i32 {
                     for (i, line) in lines.iter().enumerate() {
                         let line_index: i32 = (i as i32).try_into().unwrap();
 
-                        let line_label = Label::builder().label(format!("{}", line_index + 1)).halign(Align::End).build();
+                        let li: u64 = (line_index as u64 / cache.n_sets()).try_into().unwrap();
+
+                        let line_label = Label::builder().label(format!("{}", li)).halign(Align::End).build();
 
                         grid.attach(&line_label, 0, line_index, 2, 1);
 
