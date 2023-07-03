@@ -15,10 +15,19 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v3
-    - name: Install Dependencies
-      run: apt install libgtk-4-dev build-essential
-    - name: Build
-      run: cargo build --verbose
-    - name: Run tests
-      run: cargo test --verbose
+      - name: Checkout out repository.
+        uses: actions/checkout@v3
+      - name: Compile in Docker.
+        uses: addnab/docker-run-action@v3
+        with:
+          image: docker.io/library/alpine:latest
+          options: -v ${{ github.workspace }}:/repo
+          run: |
+            cd /repo
+            apk add gtk4.0-dev cargo
+            cargo build --release
+      - name: Upload built binary.
+        uses: actions/upload-artifact@v3
+        with:
+          name: cachecache
+          path: target/release/cachecache

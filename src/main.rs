@@ -1,244 +1,262 @@
-use std::str::FromStr;
-use std::error::Error;
-use std::{env, fs, fmt};
+use std::ffi::OsString;
+use std::path::{Path, PathBuf};
+use std::{error::Error, thread};
 
-#[derive(Clone, Copy, Debug)]
-enum Strategy {
-    LRU,
-    LFU,
+use gtk::gio::{ApplicationFlags, ApplicationCommandLine, Cancellable};
+use gtk::glib::{MainContext, Priority};
+use gtk::{prelude::*, ScrolledWindow, PolicyType, Button, Orientation, Label, Align, Separator, FileDialog, Window, DialogError, Spinner};
+use gtk::{Application, glib};
+use sim::{CacheEntry, CacheStats, CacheDesc};
+use glib::clone;
+use window::CacheCacheWindow;
+
+mod sim;
+mod window;
+
+const APP_ID: &str = "com.github.maxi0604.CacheCache";
+
+fn main() -> glib::ExitCode {
+    let app = Application::builder()
+        .application_id(APP_ID)
+        .flags(ApplicationFlags::HANDLES_COMMAND_LINE)
+        .build();
+
+    app.connect_command_line(build_ui);
+
+    app.run()
 }
 
-impl FromStr for Strategy {
-    type Err = ParseStrategyError;
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "LFU" => Ok(Strategy::LFU),
-            "LRU" => Ok(Strategy::LRU),
-            _ => Err(ParseStrategyError)
-        }
-    }
+enum SimulationCommunication {
+    Success((CacheLineVec, CacheDesc, Vec<u64>, CacheStats)),
+    Failure,
+    Run
 }
 
-#[derive(Debug, PartialEq, Eq)]
-struct ParseStrategyError;
-impl fmt::Display for ParseStrategyError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Invalid strategy")
-    }
-}
+fn build_ui(app: &Application, command_line: &ApplicationCommandLine) -> i32 {
 
-#[derive(Debug, PartialEq, Eq)]
-struct FileTooShortError;
-impl fmt::Display for FileTooShortError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Missing parameters.")
-    }
-}
+    let window = CacheCacheWindow::new(app);
 
-impl Error for FileTooShortError {}
-
-#[derive(Clone, Debug)]
-struct CacheDesc {
-    addr_size: u64,
-    block_size: u64,
-    n_blocks: u64,
-    assoc: u64,
-    strat: Option<Strategy>,
-}
-
-#[derive(Clone, Debug)]
-struct CacheEntry {
-    tag: u64,
-    last_used: u64,
-    count_used: u64,
-    entered: u64,
-}
-
-struct CacheStats {
-    hits: u64,
-    misses: u64,
-    evictions: u64,
-}
-
-impl CacheDesc {
-    fn tag_bits(&self) -> u64 {
-        self.addr_size - self.block_size - self.n_blocks / self.assoc
+    let arguments: Vec<OsString> = command_line.arguments();
+    if let Some(os_string) = arguments.get(1) {
+        let mut some_path_buf = PathBuf::new();
+        some_path_buf.push(Path::new(os_string));
+        window.set_path_buf(some_path_buf);
     }
 
-    fn n_sets(&self) -> u64 {
-        self.n_blocks / self.assoc
-    }
+    let scrolled_window = ScrolledWindow::builder()
+        .hscrollbar_policy(PolicyType::Automatic)
+        .min_content_width(150)
+        .vexpand(true)
+        .build();
 
-    fn idx_bits(&self) -> u64 {
-        // log2(n_sets) = 
-        (u64::BITS - self.n_sets().leading_zeros() - 1).into()
-    }
-}
+    let separator_top = Separator::new(Orientation::Horizontal);
+    let separator_bottom = Separator::new(Orientation::Horizontal);
+    separator_bottom.set_visible(false);
 
-fn format_cache_line(line: &[CacheEntry], n: u64) -> String {
-    if line.is_empty() {
-        format!("{} | -", n)
-    }
-    else {
-        format!("{} |{}", n, line.iter().map(|x| format!(" {:x} ({}) |", x.tag, x.entered)).collect::<String>())
-    }
-}
+    let file_display_label = Label::builder()
+        .label("No File Selected")
+        .build();
+    let file_display_spinner = Spinner::builder()
+        .halign(Align::End)
+        .build();
 
-fn main() -> Result<(), Box<dyn Error>> {
-    let args: Vec<String> = env::args().collect();
-
-    let (cache, addrs) = read(&args[1])?;
-
-    let (result, stats) = simulate(&cache, &addrs);
-
-    for (i, line) in result.iter().enumerate() {
-        println!("{}", format_cache_line(line, (i as u64 / cache.n_sets()).try_into().unwrap()));
-    }
-
-    println!("Hits: {1}/{0}. Misses: {2}/{0}. Evictions: {3}/{0}", addrs.len(), stats.hits, stats.misses, stats.evictions);
-
-    Ok(())
-}
-
-fn read(path: &str) -> Result<(CacheDesc, Vec<u64>), Box<dyn Error>> {
-    let content = fs::read_to_string(path).unwrap();
-    let mut lines = content.lines();
-    
-    let mut int_parameters = lines.by_ref()
-        .take(4)
-        .map(|x| x.parse::<u64>());
-
-    // int_parameters.next() is an Option<Result<u64, IntParseError>>.
-    // OkOr maps this to a Result<Result<...>, FTSError>
-    // Because of the Result<Result<...>> we need to interrogate twice.
-    let addr_size = int_parameters.next().ok_or(FileTooShortError)??;
-    let block_size: u64 = int_parameters.next().ok_or(FileTooShortError)??;
-    let n_blocks: u64 = int_parameters.next().ok_or(FileTooShortError)??;
-    let assoc = int_parameters.next().ok_or(FileTooShortError)??;
-
-    // TODO: Better error handling. This currently maps any unknown strategy to None.
-    let strat = lines.next().ok_or(FileTooShortError)?.parse().ok();
-
-    let addrs: Vec<u64> = lines
-        .filter_map(|x| u64::from_str_radix(x, 16).ok())
-        .collect();
-
-    Ok((
-        CacheDesc {
-            addr_size,
-            block_size,
-            n_blocks,
-            assoc,
-            strat,
-        },
-        addrs,
-    ))
-}
-
-fn simulate(cache: &CacheDesc, addrs: &Vec<u64>) -> (Vec<Vec<CacheEntry>>, CacheStats) {
-    // result is a vector of cache lines. Each cache line is represented by a vector
-    // that is pushed to after every step since we don't only want to know the final state
-    // but also the state at each step.
-    let mut result: Vec<Vec<CacheEntry>> = vec![
-        vec![];
-        cache.n_blocks.try_into().expect(
-            "Block count too large for 32 bit machine."
-        )
-    ];
-
-    let mut stats = CacheStats {
-        hits: 0,
-        misses: 0,
-        evictions: 0
-    };
-
-    // Build masks to split address into parts.
-    // Example:
-    // Block Count = 16, Block Size = 16, Associativity = 4, (=> 4 Sets) 
-    // addr = 100110011001
-    //        ttttttiioooo
-    // ( o = offset, i = set index, t = tag )
-    // The masks will have a one bit in the corresponding places above.
-    
-    let mut idx_mask: u64 = 0;
-    for j in cache.block_size..(cache.block_size + cache.idx_bits()) {
-        idx_mask |= 1 << j;
-    }
-
-    let mut tag_mask: u64 = 0;
-    for j in (cache.addr_size - cache.tag_bits())..cache.addr_size {
-        tag_mask |= 1 << j;
-    }
-    
-    // Iterate by index since we need to store at which iteration an access happened.
-    for i in 0..addrs.len() {
-        // The tag is the leftmost part of the address and needs to be shifted by the length of the
-        // tail.
-        let tag = (addrs[i] & tag_mask) >> (cache.block_size + cache.idx_bits());
-
-        // The set index is to the left of the block size.
-        let set_idx = (addrs[i] & idx_mask) >> cache.block_size;
-
-        let set = &mut result[((set_idx * cache.assoc) as usize)..(((set_idx + 1) * cache.assoc)) as usize];
-
-        // Hit! Entry in the set with matching tag was found.
-        if let Some(hit) = set.iter_mut().filter_map(|x| x.last_mut()).filter(|entry| entry.tag == tag).next() {
-            hit.count_used += 1;
-            hit.last_used = i as u64;
-
-            stats.hits += 1;
-            continue;
-        }
-
-        stats.misses += 1;
-
-        let new_entry = CacheEntry {
-            tag,
-            count_used: 1,
-            last_used: i as u64,
-            entered: i as u64,
-        };
-
-        match cache.strat {
-            Some(Strategy::LRU) => {
-                if let Some(cache_line) = set.iter_mut().filter(|x| x.is_empty()).next() {
-                    // Empty = Free line found.
-                    cache_line.push(new_entry);
-                }
-                else {
-                    // No empty line found. Evict the entry where last_used is minimal.
-                    // Eviction happens by appending since the last elements of the line vectors
-                    // are considered to be the current state of the cache.
-                    let cache_line = set.iter_mut().min_by_key(|x| x.last().unwrap().last_used);
-                    cache_line.expect("Set must contain at least an empty or a full line.").push(new_entry);
-                    stats.evictions += 1;
-                }
-
-            },
-            Some(Strategy::LFU) => {
-                if let Some(cache_line) = set.iter_mut().filter(|x| x.is_empty()).next() {
-                    cache_line.push(new_entry);
-                }
-                else {
-                    // No empty line found. Evict the entry where count_used is minimal.
-                    // Eviction happens by appending since the last elements of the line vectors
-                    // are considered to be the current state of the cache.
-                    let cache_line = set.iter_mut().min_by_key(|x| x.last().unwrap().count_used);
-                    cache_line.expect("Set must contain at least an empty or a full line.").push(new_entry);
-                    stats.evictions += 1;
-                }
-            },
-            // No eviction strategy should usually only be used with a direct (associativity = 1)
-            // cache. We just assume that is the case and evict or write the first (and usually only) entry
-            // in a block.
-            None => {
-                if !set[0].is_empty() {
-                    stats.evictions += 1;
-                }
-                set[0].push(new_entry); 
+    window.bind_property("path-buf", &file_display_label, "label")
+        .transform_to(|_, path_buf: PathBuf| {
+            if let Some(file_str) = path_buf.to_str().to_owned() {
+                Some(file_str.to_value())
+            } else if path_buf.is_file() {
+                Some("Could not parse file name to string".to_value())
+            } else {
+                Some("No File Selected".to_value())
             }
-        }
-    }
+        })
+        .build();
 
-    (result, stats)
+    let file_display = gtk::Box::builder()
+        .spacing(10)
+        .margin_end(10)
+        .margin_start(10)
+        .margin_bottom(10)
+        .orientation(Orientation::Horizontal)
+        .hexpand(true)
+        .build();
+
+    file_display.append(&file_display_label);
+    file_display.append(&file_display_spinner);
+    
+    let simulate_button = Button::builder()
+        .sensitive(window.path_buf().is_file())
+        .hexpand(true)
+        .label("Simulate")
+        .build();
+
+    let stats_showcase = Label::builder().visible(false).build();
+
+    stats_showcase.bind_property("visible", &separator_bottom, "visible")
+        .bidirectional()
+        .build();
+
+    let (sim_sender, sim_receiver) = MainContext::channel(Priority::default());
+
+    simulate_button.connect_clicked(clone!(@weak window => move |_| {
+        let sim_sender = sim_sender.clone();
+        let path_buf = window.path_buf();
+        if path_buf.is_file() {
+            let some_path_buf = path_buf.clone();
+            thread::spawn(move || {
+                sim_sender.send(SimulationCommunication::Run).expect("Could not send through channel");
+
+                match run_sim(&some_path_buf) {
+                    Ok(result) => {
+                        sim_sender.send(SimulationCommunication::Success(result)).expect("Could not send through channel");
+                    },
+                    Err(err) => {
+                        eprintln!("run_sim: {}", err);
+                        sim_sender.send(SimulationCommunication::Failure).expect("Could not send through channel");
+                    }
+                }
+
+            });
+        } else {
+            eprintln!("no file selected");
+        }
+    }));
+
+    let (stats_sender, stats_receiver) = MainContext::channel(Priority::default());
+
+    sim_receiver.attach(None, clone!(@weak simulate_button, @weak scrolled_window => @default-return Continue(false),
+        move |result| {
+            let stats_sender = stats_sender.clone();
+            match result {
+                SimulationCommunication::Success((lines, cache, addrs, stats)) => {
+                    simulate_button.set_sensitive(true);
+                    
+                    let grid = gtk::Grid::builder()
+                        .margin_end(10)
+                        .margin_top(10)
+                        .margin_start(10)
+                        .margin_bottom(10)
+                        .column_spacing(10)
+                        .build();
+
+                    for (i, line) in lines.iter().enumerate() {
+                        let line_index: i32 = (i as i32).try_into().unwrap();
+
+                        let li: u64 = (line_index as u64 / cache.n_sets()).try_into().unwrap();
+
+                        let line_label = Label::builder().label(format!("{}", li)).halign(Align::End).build();
+
+                        grid.attach(&line_label, 0, line_index, 2, 1);
+
+                        if line.is_empty() {
+                            let label = Label::builder().label("-").build();
+                            grid.attach(&label, 2, line_index, 1, 1);
+                        } else {
+                            let mut column_index: i32 = 2;
+
+                            for entry in line.iter() {
+                                let label = Label::builder().label(format!("{} ({})", entry.tag(), entry.entered())).build();
+                                grid.attach(&label, column_index, line_index, 1, 1);
+                                column_index += 1;
+                            }
+                        }
+                    }
+
+                    scrolled_window.set_child(Some(&grid));
+                    stats_sender.send(Some((cache, addrs, stats))).expect("Could not send through stats channel");
+                },
+                SimulationCommunication::Failure => {
+                    simulate_button.set_sensitive(true);
+                },
+                SimulationCommunication::Run => {
+                    simulate_button.set_sensitive(false);
+                }
+            }
+            Continue(true)
+        }
+    ));
+
+    let container_box = gtk::Box::builder()
+        .orientation(Orientation::Vertical)
+        .build();
+
+    stats_receiver.attach(None, clone!(@weak stats_showcase => @default-return Continue(false), 
+        move |stats: Option<(CacheDesc, Vec<u64>, CacheStats)>| {
+            match stats {
+                Some((_cache, addrs, stats)) => {
+                    stats_showcase.set_label(format!("Hits: {1}/{0}. Misses: {2}/{0}. Evictions: {3}/{0}", addrs.len(), stats.hits(), stats.misses(), stats.evictions()).as_str());
+                    stats_showcase.set_visible(true);
+                }
+                None => {
+                    stats_showcase.set_visible(false);
+                }
+            }
+            Continue(true)
+        }
+    ));
+
+    let button_container = gtk::Box::builder()
+        .orientation(Orientation::Horizontal)
+        .spacing(10)
+        .hexpand(true)
+        .margin_end(10)
+        .margin_top(10)
+        .margin_start(10)
+        .margin_bottom(10)
+        .build();
+
+    let open_file_button = Button::builder()
+        .label("Open")
+        .hexpand(true)
+        .build();
+
+    button_container.append(&simulate_button);
+    button_container.append(&open_file_button);
+
+    container_box.append(&button_container);
+    container_box.append(&file_display);
+    container_box.append(&separator_top);
+    container_box.append(&scrolled_window);
+    container_box.append(&separator_bottom);
+    container_box.append(&stats_showcase);
+
+    window.set_child(Some(&container_box));
+
+    open_file_button.connect_clicked(clone!(@weak window, @weak file_display_spinner, @weak simulate_button => 
+        move |_| {
+            let file_dialogue = FileDialog::new();
+            simulate_button.set_sensitive(false);
+            file_display_spinner.set_spinning(true);
+            file_dialogue.open(Window::NONE, Cancellable::NONE, move |result| {
+                match result {
+                    Ok(file) => {
+                        if let Some(path) = file.path() {
+                            window.set_path_buf(path);
+                        }
+                        simulate_button.set_sensitive(true);
+                    },
+                    Err(err) => {
+                        if let Some(dialog_error) = err.kind::<DialogError>() {
+                            dbg!(dialog_error);
+                        }
+                    }
+                }
+                file_display_spinner.set_spinning(false);
+            })
+        }
+    ));
+
+
+    window.present();
+    0
+}
+
+type CacheLineVec = Vec<Vec<CacheEntry>>;
+
+fn run_sim(path: &PathBuf) -> Result<(CacheLineVec, CacheDesc, Vec<u64>, sim::CacheStats), Box<dyn Error>> {
+    let (cache, addrs) = sim::read(path)?;
+
+    let (lines, stats) = sim::simulate(&cache, &addrs);
+
+    Ok((lines, cache, addrs, stats))
 }
