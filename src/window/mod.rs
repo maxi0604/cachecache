@@ -1,10 +1,7 @@
 mod imp;
 
-use std::path::PathBuf;
-
 use gtk::{Application, glib::{self, object::ObjectBuilder}, gio};
 use glib::Object;
-use gtk::subclass::prelude::*;
 
 glib::wrapper! {
     pub struct CacheCacheWindow(ObjectSubclass<imp::CacheCacheWindow>)
@@ -24,17 +21,5 @@ impl CacheCacheWindow {
             .property("default-height", 400)
             .property("default-width", 500)
             .property("title", "CacheCache")
-    }
-    pub fn path_buf(&self) -> Option<PathBuf> {
-        let result = self.imp()
-            .path_buf
-            .take();
-        self.set_path_buf(result.clone());
-        result
-    }
-    pub fn set_path_buf(&self, path_buf: Option<PathBuf>) {
-        self.imp()
-            .path_buf
-            .set(path_buf);
     }
 }

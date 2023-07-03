@@ -4,7 +4,7 @@ use std::{error::Error, thread};
 
 use gtk::gio::{ApplicationFlags, ApplicationCommandLine, Cancellable};
 use gtk::glib::{MainContext, Priority};
-use gtk::{prelude::*, ScrolledWindow, PolicyType, Button, Orientation, Label, Align, Separator, FileDialog, Window};
+use gtk::{prelude::*, ScrolledWindow, PolicyType, Button, Orientation, Label, Align, Separator, FileDialog, Window, DialogError, Spinner};
 use gtk::{Application, glib};
 use sim::{CacheEntry, CacheStats, CacheDesc};
 use glib::clone;
@@ -40,9 +40,7 @@ fn build_ui(app: &Application, command_line: &ApplicationCommandLine) -> i32 {
     if let Some(os_string) = arguments.get(1) {
         let mut some_path_buf = PathBuf::new();
         some_path_buf.push(Path::new(os_string));
-        window.set_path_buf(Some(some_path_buf));
-    } else {
-        window.set_path_buf(None);
+        window.set_path_buf(some_path_buf);
     }
 
     let scrolled_window = ScrolledWindow::builder()
@@ -55,9 +53,41 @@ fn build_ui(app: &Application, command_line: &ApplicationCommandLine) -> i32 {
     let separator_bottom = Separator::new(Orientation::Horizontal);
     separator_bottom.set_visible(false);
 
+    let file_display_label = Label::builder()
+        .label("No File Selected")
+        .build();
+    let file_display_spinner = Spinner::builder()
+        .halign(Align::End)
+        .build();
+
+    window.bind_property("path-buf", &file_display_label, "label")
+        .transform_to(|_, path_buf: PathBuf| {
+            if let Some(file_str) = path_buf.to_str().to_owned() {
+                Some(file_str.to_value())
+            } else if path_buf.is_file() {
+                Some("Could not parse file name to string".to_value())
+            } else {
+                Some("No File Selected".to_value())
+            }
+        })
+        .build();
+
+    let file_display = gtk::Box::builder()
+        .spacing(10)
+        .margin_end(10)
+        .margin_start(10)
+        .margin_bottom(10)
+        .orientation(Orientation::Horizontal)
+        .hexpand(true)
+        .build();
+
+    file_display.append(&file_display_label);
+    file_display.append(&file_display_spinner);
+    
     let simulate_button = Button::builder()
+        .sensitive(window.path_buf().is_file())
+        .hexpand(true)
         .label("Simulate")
-        .sensitive(window.path_buf() != None)
         .build();
 
     simulate_button.bind_property("sensitive", &separator_bottom, "visible")
@@ -70,8 +100,9 @@ fn build_ui(app: &Application, command_line: &ApplicationCommandLine) -> i32 {
 
     simulate_button.connect_clicked(clone!(@weak window => move |_| {
         let sim_sender = sim_sender.clone();
-        if let Some(some_path_buf) = window.path_buf() {
-            let some_path_buf = some_path_buf.clone();
+        let path_buf = window.path_buf();
+        if path_buf.is_file() {
+            let some_path_buf = path_buf.clone();
             thread::spawn(move || {
                 sim_sender.send(SimulationCommunication::Run).expect("Could not send through channel");
 
@@ -165,6 +196,7 @@ fn build_ui(app: &Application, command_line: &ApplicationCommandLine) -> i32 {
     let button_container = gtk::Box::builder()
         .orientation(Orientation::Horizontal)
         .spacing(10)
+        .hexpand(true)
         .margin_end(10)
         .margin_top(10)
         .margin_start(10)
@@ -173,12 +205,14 @@ fn build_ui(app: &Application, command_line: &ApplicationCommandLine) -> i32 {
 
     let open_file_button = Button::builder()
         .label("Open")
+        .hexpand(true)
         .build();
 
     button_container.append(&simulate_button);
     button_container.append(&open_file_button);
 
     container_box.append(&button_container);
+    container_box.append(&file_display);
     container_box.append(&separator_top);
     container_box.append(&scrolled_window);
     container_box.append(&separator_bottom);
@@ -186,21 +220,26 @@ fn build_ui(app: &Application, command_line: &ApplicationCommandLine) -> i32 {
 
     window.set_child(Some(&container_box));
 
-    open_file_button.connect_clicked(clone!(@weak window, @weak simulate_button => 
+    open_file_button.connect_clicked(clone!(@weak window, @weak file_display_spinner, @weak simulate_button => 
         move |_| {
             let file_dialogue = FileDialog::new();
+            simulate_button.set_sensitive(false);
+            file_display_spinner.set_spinning(true);
             file_dialogue.open(Window::NONE, Cancellable::NONE, move |result| {
                 match result {
                     Ok(file) => {
                         if let Some(path) = file.path() {
-                            window.set_path_buf(Some(path));
+                            window.set_path_buf(path);
                         }
                         simulate_button.set_sensitive(true);
                     },
-                    Err(_) => {
-                        simulate_button.set_sensitive(false);
+                    Err(err) => {
+                        if let Some(dialog_error) = err.kind::<DialogError>() {
+                            dbg!(dialog_error);
+                        }
                     }
                 }
+                file_display_spinner.set_spinning(false);
             })
         }
     ));
