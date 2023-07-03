@@ -187,13 +187,13 @@ pub fn simulate(cache: &CacheDesc, addrs: &Vec<u64>) -> (Vec<Vec<CacheEntry>>, C
     }
 
     // Iterate by index since we need to store at which iteration an access happened.
-    for i in 0..addrs.len() {
+    for (i, addr) in addrs.iter().enumerate() {
         // The tag is the leftmost part of the address and needs to be shifted by the length of the
         // tail.
-        let tag = (addrs[i] & tag_mask) >> (cache.block_size + cache.idx_bits());
+        let tag = (addr & tag_mask) >> (cache.block_size + cache.idx_bits());
 
         // The set index is to the left of the block size.
-        let set_idx = (addrs[i] & idx_mask) >> cache.block_size;
+        let set_idx = (addr & idx_mask) >> cache.block_size;
 
         let set =
             &mut result[((set_idx * cache.assoc) as usize)..((set_idx + 1) * cache.assoc) as usize];
@@ -201,9 +201,7 @@ pub fn simulate(cache: &CacheDesc, addrs: &Vec<u64>) -> (Vec<Vec<CacheEntry>>, C
         // Hit! Entry in the set with matching tag was found.
         if let Some(hit) = set
             .iter_mut()
-            .filter_map(|x| x.last_mut())
-            .filter(|entry| entry.tag == tag)
-            .next()
+            .filter_map(|x| x.last_mut()).find(|entry| entry.tag == tag)
         {
             hit.count_used += 1;
             hit.last_used = i as u64;
@@ -223,7 +221,7 @@ pub fn simulate(cache: &CacheDesc, addrs: &Vec<u64>) -> (Vec<Vec<CacheEntry>>, C
 
         match cache.strat {
             Strategy::LRU => {
-                if let Some(cache_line) = set.iter_mut().filter(|x| x.is_empty()).next() {
+                if let Some(cache_line) = set.iter_mut().find(|x| x.is_empty()) {
                     // Empty = Free line found.
                     cache_line.push(new_entry);
                 } else {
@@ -238,7 +236,7 @@ pub fn simulate(cache: &CacheDesc, addrs: &Vec<u64>) -> (Vec<Vec<CacheEntry>>, C
                 }
             }
             Strategy::LFU => {
-                if let Some(cache_line) = set.iter_mut().filter(|x| x.is_empty()).next() {
+                if let Some(cache_line) = set.iter_mut().find(|x| x.is_empty()) {
                     cache_line.push(new_entry);
                 } else {
                     // No empty line found. Evict the entry where count_used is minimal.

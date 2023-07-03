@@ -102,7 +102,7 @@ fn build_ui(app: &Application, command_line: &ApplicationCommandLine) -> i32 {
         let sim_sender = sim_sender.clone();
         let path_buf = window.path_buf();
         if path_buf.is_file() {
-            let some_path_buf = path_buf.clone();
+            let some_path_buf = path_buf;
             thread::spawn(move || {
                 sim_sender.send(SimulationCommunication::Run).expect("Could not send through channel");
 
