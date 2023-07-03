@@ -8,6 +8,7 @@ use std::{fmt, fs};
 enum Strategy {
     LRU,
     LFU,
+    First
 }
 
 impl FromStr for Strategy {
@@ -16,6 +17,7 @@ impl FromStr for Strategy {
         match s {
             "LFU" => Ok(Strategy::LFU),
             "LRU" => Ok(Strategy::LRU),
+            "First" => Ok(Strategy::First),
             _ => Err(ParseStrategyError),
         }
     }
@@ -27,6 +29,8 @@ impl fmt::Display for ParseStrategyError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Invalid strategy")
     }
+}
+impl Error for ParseStrategyError {
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -55,7 +59,7 @@ pub struct CacheDesc {
     block_size: u64,
     n_blocks: u64,
     assoc: u64,
-    strat: Option<Strategy>,
+    strat: Strategy,
 }
 
 impl CacheDesc {
@@ -129,7 +133,7 @@ pub fn read(path: &PathBuf) -> Result<(CacheDesc, Vec<u64>), Box<dyn Error>> {
     let assoc = int_parameters.next().ok_or(FileTooShortError)??;
 
     // TODO: Better error handling. This currently maps any unknown strategy to None.
-    let strat = lines.next().ok_or(FileTooShortError)?.parse().ok();
+    let strat = lines.next().ok_or(FileTooShortError)?.parse()?;
 
     let addrs: Vec<u64> = lines
         .filter_map(|x| u64::from_str_radix(x, 16).ok())
@@ -218,7 +222,7 @@ pub fn simulate(cache: &CacheDesc, addrs: &Vec<u64>) -> (Vec<Vec<CacheEntry>>, C
         };
 
         match cache.strat {
-            Some(Strategy::LRU) => {
+            Strategy::LRU => {
                 if let Some(cache_line) = set.iter_mut().filter(|x| x.is_empty()).next() {
                     // Empty = Free line found.
                     cache_line.push(new_entry);
@@ -233,7 +237,7 @@ pub fn simulate(cache: &CacheDesc, addrs: &Vec<u64>) -> (Vec<Vec<CacheEntry>>, C
                     stats.evictions += 1;
                 }
             }
-            Some(Strategy::LFU) => {
+            Strategy::LFU => {
                 if let Some(cache_line) = set.iter_mut().filter(|x| x.is_empty()).next() {
                     cache_line.push(new_entry);
                 } else {
@@ -250,7 +254,7 @@ pub fn simulate(cache: &CacheDesc, addrs: &Vec<u64>) -> (Vec<Vec<CacheEntry>>, C
             // No eviction strategy should usually only be used with a direct (associativity = 1)
             // cache. We just assume that is the case and evict or write the first (and usually only) entry
             // in a block.
-            None => {
+            Strategy::First => {
                 if !set[0].is_empty() {
                     stats.evictions += 1;
                 }
