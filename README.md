@@ -2,13 +2,13 @@
 
 This program simulates a single level of accesses to a memory cache with given memory addresses.
 
-Example usage:
+Example:
 
 ```sh
-cachecache test/trivial
+cachecache [filename]
 ```
 
-This will open up the GUI application with the file pre-selected. Executing just `cachecache` will also open the GUI, but you will have to select a file before being able to simulate anything.
+This will open up the GUI application with the file `filename` selected, if given.
 
 File format is subject to change.
 
