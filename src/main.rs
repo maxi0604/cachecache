@@ -45,8 +45,6 @@ fn build_ui(app: &Application, command_line: &ApplicationCommandLine) -> i32 {
         .width_chars(5)
         .build();
 
-    // title_box.append(&title_label);
-
     let header_bar = HeaderBar::builder()
         .title_widget(&title_label)
         .build();
