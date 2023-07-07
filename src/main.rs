@@ -190,7 +190,7 @@ fn build_ui(app: &Application, command_line: &ApplicationCommandLine) -> i32 {
                             let mut column_index: i32 = 2;
 
                             for entry in line.iter() {
-                                let label = Label::builder().label(format!("{} ({})", entry.tag(), entry.entered())).build();
+                                let label = Label::builder().label(format!("{:x} ({})", entry.tag(), entry.entered())).build();
                                 grid.attach(&label, column_index, line_index, 1, 1);
                                 column_index += 1;
                             }
