@@ -63,17 +63,21 @@ pub struct CacheDesc {
 }
 
 impl CacheDesc {
-    fn tag_bits(&self) -> u64 {
-        self.addr_size - self.block_size - self.n_blocks / self.assoc
+    pub fn tag_bits(&self) -> u64 {
+        self.addr_size - self.offset_bits() - self.idx_bits()
     }
 
     pub fn n_sets(&self) -> u64 {
         self.n_blocks / self.assoc
     }
 
-    fn idx_bits(&self) -> u64 {
+    pub fn idx_bits(&self) -> u64 {
         // log2(n_sets) =
         (u64::BITS - self.n_sets().leading_zeros() - 1).into()
+    }
+
+    pub fn offset_bits(&self) -> u64 {
+        self.block_size
     }
 }
 
@@ -260,4 +264,18 @@ pub fn simulate(cache: &CacheDesc, addrs: &[u64]) -> (Vec<Vec<CacheEntry>>, Cach
     }
 
     (result, stats)
+}
+
+pub fn format_cache_line(line: &[CacheEntry], n: u64) -> String {
+    if line.is_empty() {
+        format!("{} | -", n)
+    } else {
+        format!(
+            "{} |{}",
+            n,
+            line.iter()
+                .map(|x| format!(" {:x} ({}) |", x.tag, x.entered))
+                .collect::<String>()
+        )
+    }
 }

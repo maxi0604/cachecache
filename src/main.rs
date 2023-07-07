@@ -1,6 +1,6 @@
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
-use std::{error::Error, thread};
+use std::{error::Error, thread, env};
 
 use gtk::gio::{ApplicationFlags, ApplicationCommandLine, Cancellable};
 use gtk::glib::{MainContext, Priority};
@@ -18,6 +18,26 @@ const APP_ID: &str = "com.github.maxi0604.CacheCache";
 type SimResult = (CacheLineVec, CacheDesc, Vec<u64>, CacheStats);
 
 fn main() -> glib::ExitCode {
+    let mut args = env::args();
+    if args.by_ref().any(|x| x == "--no-window") {
+        let (cache, addrs) = sim::read(&args.next().expect("Missing argument. --no-window implies path").into()).unwrap();
+        let (lines, stats) = sim::simulate(&cache, &addrs);
+
+        for (i, line) in lines.iter().enumerate() {
+            println!("{}", sim::format_cache_line(line, (i as u64 / cache.n_sets()).try_into().unwrap()));
+        }
+
+        println!("Hits: {1}/{0}. Misses: {2}/{0}. Evictions: {3}/{0}. Tag Bits: {4}, Index Bits: {5} Offset Bits: {6}",
+            addrs.len(),
+            stats.hits(),
+            stats.misses(),
+            stats.evictions(),
+            cache.tag_bits(),
+            cache.idx_bits(),
+            cache.offset_bits(),
+        );
+        return 0.into();
+    }
     let app = Application::builder()
         .application_id(APP_ID)
         .flags(ApplicationFlags::HANDLES_COMMAND_LINE)
