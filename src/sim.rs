@@ -265,3 +265,17 @@ pub fn simulate(cache: &CacheDesc, addrs: &[u64]) -> (Vec<Vec<CacheEntry>>, Cach
 
     (result, stats)
 }
+
+pub fn format_cache_line(line: &[CacheEntry], n: u64) -> String {
+    if line.is_empty() {
+        format!("{} | -", n)
+    } else {
+        format!(
+            "{} |{}",
+            n,
+            line.iter()
+                .map(|x| format!(" {:x} ({}) |", x.tag, x.entered))
+                .collect::<String>()
+        )
+    }
+}
