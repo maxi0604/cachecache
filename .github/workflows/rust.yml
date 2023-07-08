@@ -24,7 +24,7 @@ jobs:
           options: -v ${{ github.workspace }}:/repo
           run: |
             cd /repo
-            apk add gtk4.0-dev cargo
+            apk add gtk4.0-dev cargo libadwaita-dev
             cargo build --release
       - name: Upload built binary.
         uses: actions/upload-artifact@v3
