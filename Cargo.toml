@@ -5,3 +5,4 @@ edition = "2021"
 
 [dependencies]
 gtk = { version = "0.6.6", package = "gtk4", features = ["v4_10"] }
+libadwaita = "0.4.4"
