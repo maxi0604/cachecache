@@ -4,13 +4,14 @@ use std::{error::Error, thread, env};
 
 use gtk::gio::{ApplicationFlags, ApplicationCommandLine, Cancellable};
 use gtk::glib::{MainContext, Priority};
+use gtk::pango::EllipsizeMode;
 use gtk::{prelude::*, ScrolledWindow, PolicyType, Button, Orientation, Label, Align, Separator, FileDialog, Window, DialogError, Spinner};
 use gtk::{glib};
 use sim::{CacheEntry, CacheStats, CacheDesc};
 use glib::clone;
 use window::CacheCacheWindow;
 
-use libadwaita::Application;
+use libadwaita::{Application, HeaderBar};
 mod sim;
 mod window;
 
@@ -58,6 +59,18 @@ fn build_ui(app: &Application, command_line: &ApplicationCommandLine) -> i32 {
 
     let window = CacheCacheWindow::new(app);
 
+    let title_label = Label::builder()
+        .label("CacheCache")
+        .single_line_mode(true)
+        .ellipsize(EllipsizeMode::End)
+        .width_chars(5)
+        .build();
+
+    let header_bar = HeaderBar::builder()
+        .title_widget(&title_label)
+        .build();
+
+
     let arguments: Vec<OsString> = command_line.arguments();
     if let Some(os_string) = arguments.get(1) {
         let mut some_path_buf = PathBuf::new();
@@ -96,6 +109,7 @@ fn build_ui(app: &Application, command_line: &ApplicationCommandLine) -> i32 {
 
     let file_display = gtk::Box::builder()
         .spacing(10)
+        .margin_top(10)
         .margin_end(10)
         .margin_start(10)
         .margin_bottom(10)
@@ -109,7 +123,7 @@ fn build_ui(app: &Application, command_line: &ApplicationCommandLine) -> i32 {
     let simulate_button = Button::builder()
         .sensitive(window.path_buf().is_file())
         .hexpand(true)
-        .label("Simulate")
+        .icon_name("media-playback-start-symbolic")
         .build();
 
     let stats_showcase = Label::builder().visible(false).build();
@@ -177,7 +191,7 @@ fn build_ui(app: &Application, command_line: &ApplicationCommandLine) -> i32 {
                             let mut column_index: i32 = 2;
 
                             for entry in line.iter() {
-                                let label = Label::builder().label(format!("{} ({})", entry.tag(), entry.entered())).build();
+                                let label = Label::builder().label(format!("{:x} ({})", entry.tag(), entry.entered())).build();
                                 grid.attach(&label, column_index, line_index, 1, 1);
                                 column_index += 1;
                             }
@@ -217,25 +231,11 @@ fn build_ui(app: &Application, command_line: &ApplicationCommandLine) -> i32 {
         }
     ));
 
-    let button_container = gtk::Box::builder()
-        .orientation(Orientation::Horizontal)
-        .spacing(10)
-        .hexpand(true)
-        .margin_end(10)
-        .margin_top(10)
-        .margin_start(10)
-        .margin_bottom(10)
-        .build();
-
     let open_file_button = Button::builder()
-        .label("Open")
+        .icon_name("document-open-symbolic")
         .hexpand(true)
         .build();
 
-    button_container.append(&simulate_button);
-    button_container.append(&open_file_button);
-
-    container_box.append(&button_container);
     container_box.append(&file_display);
     container_box.append(&separator_top);
     container_box.append(&scrolled_window);
@@ -268,6 +268,10 @@ fn build_ui(app: &Application, command_line: &ApplicationCommandLine) -> i32 {
         }
     ));
 
+    header_bar.pack_start(&open_file_button);
+    header_bar.pack_start(&simulate_button);
+
+    window.set_titlebar(Some(&header_bar));
 
     window.present();
     0
