@@ -5,12 +5,13 @@ use std::{error::Error, thread, env};
 use gtk::gio::{ApplicationFlags, ApplicationCommandLine, Cancellable};
 use gtk::glib::{MainContext, Priority};
 use gtk::pango::EllipsizeMode;
-use gtk::{prelude::*, ScrolledWindow, PolicyType, Button, Orientation, Label, Align, Separator, FileDialog, Window, DialogError, Spinner, HeaderBar};
-use gtk::{Application, glib};
+use gtk::{prelude::*, ScrolledWindow, PolicyType, Button, Orientation, Label, Align, Separator, FileDialog, Window, DialogError, Spinner};
+use gtk::{glib};
 use sim::{CacheEntry, CacheStats, CacheDesc};
 use glib::clone;
 use window::CacheCacheWindow;
 
+use libadwaita::{Application, HeaderBar};
 mod sim;
 mod window;
 

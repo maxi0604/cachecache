@@ -1,7 +1,8 @@
 mod imp;
 
-use gtk::{Application, glib::{self, object::ObjectBuilder}, gio};
+use gtk::{glib::{self, object::ObjectBuilder}, gio};
 use glib::Object;
+use libadwaita::Application;
 
 glib::wrapper! {
     pub struct CacheCacheWindow(ObjectSubclass<imp::CacheCacheWindow>)
